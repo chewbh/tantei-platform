@@ -1,0 +1,69 @@
+#############################################################################
+## run modprobe br_netfilter to enable bridge-netfilter, which enables:
+#############################################################################
+## - {Ip,Ip6,Arp}tables can filter bridged IPv4/IPv6/ARP packets.
+## - combined with ebtables, the bridge-nf code therefore makes Linux a
+##   very powerful stateful transparent firewall
+## - creation of a transparent masquerading machine
+##   (i.e. all local hosts think they are directly connected to the Internet)
+## - {ip,ip6,arp}tables see bridged traffic can be disabled/ enabled using the
+##   appropriate proc entries, located in /proc/sys/net/bridge/
+#############################################################################
+## needed for kubernetes in order to configure iptables to see bridged traffic
+#############################################################################
+
+- name: verify if br_netfilter module exists
+  shell: "modinfo br_netfilter"
+  environment:
+    PATH: "{{ ansible_env.PATH }}:/sbin" # Make sure we can workaround RH's conservative path management
+  register: modinfo_br_netfilter
+  failed_when: modinfo_br_netfilter.rc not in [0, 1]
+  changed_when: false
+  become: yes
+
+- name: verify kernel module path exists
+  file:
+    path: /etc/modules-load.d
+    state: directory
+  become: yes
+
+- name: enable br_netfilter kernel module
+  modprobe:
+    name: br_netfilter
+    state: present
+  become: yes
+  when: modinfo_br_netfilter.rc == 0
+
+- name: persist br_netfilter kernel module
+  copy:
+    dest: /etc/modules-load.d/k8s-br_netfilter.conf
+    content: br_netfilter
+  become: yes
+  when: modinfo_br_netfilter.rc == 0
+
+#############################################################################
+## run modprobe overlay which is needed for containerd or cri-o
+#############################################################################
+
+- name: verify if overlay module exists
+  shell: "modinfo overlay"
+  environment:
+    PATH: "{{ ansible_env.PATH }}:/sbin" # Make sure we can workaround RH's conservative path management
+  register: modinfo_overlay
+  failed_when: modinfo_overlay.rc not in [0, 1]
+  changed_when: false
+  become: yes
+
+- name: enable overlay kernel module
+  modprobe:
+    name: overlay
+    state: present
+  become: yes
+  when: modinfo_overlay.rc == 0
+
+- name: persist overlay kernel module
+  copy:
+    dest: /etc/modules-load.d/k8s-overlay.conf
+    content: br_netfilter
+  become: yes
+  when: modinfo_overlay.rc == 0

@@ -1,0 +1,18 @@
+#############################################################################
+## swapfile is bad for kubernetes. Thus, disable it as part of the pre-req
+#############################################################################
+
+- name: disable swap in currently running instance if is enabled
+  command: swapoff -a
+  become: yes
+  when: ansible_swaptotal_mb > 0
+
+- name: disable and remove swap from /etc/fstab
+  mount:
+    name: "{{ item }}"
+    fstype: swap
+    state: absent
+  with_items:
+    - swap
+    - none
+  become: yes

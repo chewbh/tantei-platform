@@ -1,0 +1,26 @@
+#####################################################################################
+## kubernetes requirement for linux node’s iptables to correctly see bridged traffic
+## achieved by configure sysctl params
+## br_filter kernel module must be loaded before this step for params to work
+#####################################################################################
+
+- name: check if required sysctl params for kubernetes already exists
+  command: "sysctl net.bridge.bridge-nf-call-iptables"
+  failed_when: false
+  changed_when: false
+  become: yes
+  register: sysctl_k8s_cri
+
+- name: enable required sysctl params - bridge-nf-call iptables, ipv4 forwarding
+  sysctl:
+    name: "{{ item }}"
+    state: present
+    sysctl_file: "/etc/sysctl.d/99-kubernetes-cri.conf"
+    value: "1"
+    reload: yes
+  with_items:
+    - net.ipv4.ip_forward
+    - net.bridge.bridge-nf-call-iptables
+    - net.bridge.bridge-nf-call-ip6tables
+  become: yes
+  when: sysctl_k8s_cri.rc == 0

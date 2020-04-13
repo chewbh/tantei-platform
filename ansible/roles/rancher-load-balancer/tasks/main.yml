@@ -1,0 +1,35 @@
+- name: "create /etc/rancher conf directory"
+  file:
+    path: /etc/rancher
+    state: directory
+  become: yes
+
+- name: Install docker via pip for ansible to execute docker command
+  pip:
+    name: docker
+    state: absent
+
+- name: configure layer 4 nginx load balancer for rancher
+  template:
+    src: rancher-lb-nginx.conf.j2
+    dest: /etc/rancher/nginx.conf
+    owner: root
+    group: root
+    mode: 0644
+  become: yes
+  notify: restart rancher load balancer
+
+- name: ensure layer 4 nginx load balancer is running for rancher
+  docker_container:
+    name: rancher-nginx
+    image: nginx:1.15-alpine
+    restart_policy: unless-stopped
+    state: present
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/etc/rancher/nginx.conf:/etc/nginx/nginx.conf:ro"
+
+- name: flush to force rancher load balancer to restart if needed
+  meta: flush_handlers

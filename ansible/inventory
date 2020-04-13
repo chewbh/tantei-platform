@@ -1,0 +1,17 @@
+
+[rancher]
+rancher.tantei.io
+
+[rancher_load_balancer]
+rancher.tantei.io
+
+[nodes]
+app-01.tantei.io
+app-02.tantei.io
+app-03.tantei.io
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+ansible_connection=ssh
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+

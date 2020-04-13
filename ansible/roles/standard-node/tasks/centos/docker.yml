@@ -1,0 +1,54 @@
+- name: install pre-req for docker in centos systems
+  yum:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+    - yum-utils
+    - device-mapper-persistent-data
+    - lvm2
+  become: yes
+
+- name: add docker repository
+  yum_repository:
+    name: docker-ce
+    description: docker-ce repo
+    baseurl: https://download.docker.com/linux/centos/docker-ce.repo
+  become: yes
+
+- name: install docker-ce
+  yum:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+    - "containerd.io-{{ docker_containerd_version }}"
+    - "docker-ce-{{ docker_version }}"
+    - "docker-ce-cli-{{ docker_version }}"
+  become: yes
+
+- name: creates docker service directory
+  file:
+    path: /etc/docker
+    state: directory
+  become: yes
+
+- name: copy default docker daemon configuration
+  template:
+    src: docker-daemon.json.j2
+    dest: /etc/docker/daemon.json
+    backup: no
+  become: yes
+
+- name: creates docker service directory
+  file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+  become: yes
+
+- name: restart docker and reload daemon
+  systemd:
+    state: restarted
+    daemon_reload: yes
+    name: docker
+  become: yes

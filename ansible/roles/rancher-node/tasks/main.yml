@@ -1,0 +1,70 @@
+- name: "get rke {{ rke_version }}"
+  get_url:
+    url: "https://github.com/rancher/rke/releases/download/{{ rke_version }}/rke_linux-amd64"
+    dest: /usr/local/bin/rke
+    mode: "0755"
+  become: yes
+  register: rke_binary
+
+- name: configure rke cluster configration for rancher
+  template:
+    src: rancher-cluster.yml.j2
+    dest: "/home/{{ ansible_user_id }}/rancher-cluster.yml"
+    mode: 0644
+  when: inventory_hostname == groups['rancher'][0]
+  register: rke_cluster_config
+# - name: generate SSH key for rke
+#   user:
+#     name: "{{ ansible_user_id }}"
+#     generate_ssh_key: yes
+#     ssh_key_type: rsa
+#     ssh_key_bits: 4096
+#     ssh_key_file: .ssh/id_rsa
+#     force: no
+
+# - name: fetch generated public SSH key for rke
+#   fetch:
+#     src: "/home/{{ ansible_user_id }}/.ssh/id_rsa.pub"
+#     dest: "/tmp/rke_ssh_tmp/{{ inventory_hostname }}.pub"
+#     flat: yes
+#   changed_when: no
+
+# - name: add generated public SSH key for rke
+#   authorized_key:
+#     user: "{{ ansible_user_id }}"
+#     state: present
+#     key: "{{ lookup('file', '/tmp/rke_ssh_tmp/{{ item }}.pub') }}"
+#   with_items:
+#     - "{{ groups['rancher'] }}"
+
+# - name: remove fetched public SSH key for rke
+#   local_action:
+#     module: file
+#     path: /tmp/rke_ssh_tmp
+#     state: absent
+#   run_once: yes
+#   changed_when: no
+
+# ---
+# rke up --config ./rancher-cluster.yml
+# # Finished building Kubernetes cluster successfully
+
+# kube_config_rancher-cluster.yml
+
+# $HOME/.kube/config
+
+# # test check
+# # kubectl get nodes
+
+# # wait for rke is done
+
+# helm repo add rancher-stable https://releases.rancher.com/server-charts/stable
+# kubectl create namespace cattle-system
+
+# helm install rancher rancher-stable/rancher \
+#   --namespace cattle-system \
+#   --set hostname=rancher.my.org
+
+#   kubectl -n cattle-system rollout status deploy/rancher
+# Waiting for deployment "rancher" rollout to finish: 0 of 3 updated replicas are available...
+# deployment "rancher" successfully rolled out

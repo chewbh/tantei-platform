@@ -1,0 +1,48 @@
+- name: Set timezone to Asia/Singapore
+  timezone:
+    name: Asia/Singapore
+  become: yes
+
+- name: ensure ntpdate isn't installed
+  package:
+    name: "{{ item }}"
+    state: absent
+  with_items:
+    - ntp
+    - ntpdate
+  become: yes
+
+- name: install chrony which replace ntp, for time sync
+  package:
+    name: chrony
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: configure chrony.conf accordingly
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: 0644
+  become: yes
+  notify: restart chronyd
+
+- name: Ensure chronyd is active
+  systemd:
+    name: chronyd
+    state: started
+  become: yes
+
+- name: mask ntp service that might conflict with chronyd
+  systemd:
+    name: "{{ item }}"
+    enabled: no
+    masked: yes
+    state: stopped
+  with_items:
+    - systemd-timesyncd
+    - openntpd
+  become: yes
+  ignore_errors: yes

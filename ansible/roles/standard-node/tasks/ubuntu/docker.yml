@@ -1,0 +1,55 @@
+- name: install pre-req for docker in ubuntu systems
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - software-properties-common
+    - gnupg2
+  become: yes
+
+- name: add docker gpg apt key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+  become: yes
+
+- name: add docker repository
+  apt_repository:
+    repo: "deb https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+  become: yes
+
+- name: update apt and install docker-ce
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+    - "containerd.io={{ docker_containerd_version }}-{{ docker_containerd_minor_version }}"
+    - "docker-ce=5:{{ docker_version }}~3-0~{{ ansible_distribution | lower }}-{{ ansible_distribution_release | lower }}"
+    - "docker-ce-cli=5:{{ docker_version }}~3-0~{{ ansible_distribution | lower }}-{{ ansible_distribution_release | lower }}"
+  become: yes
+
+- name: copy default docker daemon configuration
+  template:
+    src: docker-daemon.json.j2
+    dest: /etc/docker/daemon.json
+    backup: no
+  become: yes
+
+- name: creates docker service directory
+  file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+  become: yes
+
+- name: restart docker and reload daemon
+  systemd:
+    state: restarted
+    daemon_reload: yes
+    name: docker
+  become: yes

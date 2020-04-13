@@ -1,0 +1,6 @@
+docker_version: 19.03.8
+docker_containerd_version: 1.2.13
+docker_containerd_minor_version: 1
+docker_compose_version: 1.25.4
+
+helm_version: v3.1.2

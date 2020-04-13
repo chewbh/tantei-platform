@@ -1,0 +1,5 @@
+- name: restart rancher load balancer
+  docker_container:
+    name: rancher-nginx
+    state: started
+    restart: yes

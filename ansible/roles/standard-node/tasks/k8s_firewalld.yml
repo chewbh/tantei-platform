@@ -1,0 +1,82 @@
+- name: use firewalld instead of ufw (default is disabled) for docker in ubuntu systems
+  apt:
+    name: firewalld
+    state: present
+    update_cache: yes
+  become: yes
+  when: (ansible_distribution | lower) == "ubuntu"
+
+- name: ensure firewalld service is enabled
+  systemd:
+    state: started
+    daemon_reload: yes
+    name: firewalld
+    enabled: yes
+  become: yes
+
+- name: open ports required by rancher (management plane)
+  firewalld:
+    port: "{{item}}"
+    permanent: yes
+    state: enabled
+  become: yes
+  with_items:
+    - 80/tcp # load balancer/reverse proxy (http) to rancher UI
+    - 443/tcp # load balancer/reverse proxy (https) to rancher UI
+    # - 636/tcp # for ldap/s
+  notify: restart firewalld
+
+- name: open ports required by kubernetes (control plane)
+  firewalld:
+    port: "{{item}}"
+    permanent: yes
+    state: enabled
+  become: yes
+  with_items:
+    - 6443/tcp # kubernetes api server (called by all)
+    - 2379-2380/tcp # etcd server client api (called by kube-apiserver, etcd)
+    - 10250/tcp # kubelet api (called by itself and other control plane nodes)
+    # - 10251/tcp # kube-scheduler (called by itself)
+    # - 10252/tcp # kube-controller-manager (called by itself)
+  notify: restart firewalld
+
+- name: open ports required by kubernetes (data plane)
+  firewalld:
+    port: "{{item}}"
+    permanent: yes
+    state: enabled
+  become: yes
+  with_items:
+    - 10250/tcp # kubelet api (called by itself and other control plane nodes)
+    - 30000-32767/tcp # nodeport services
+    - 30000-32767/udp # nodeport services
+    - 80/tcp # ingress controller (http)
+    - 443/tcp # ingress controller (https)
+  notify: restart firewalld
+
+- name: open ports required by kubernetes (networking, misc)
+  firewalld:
+    port: "{{item}}"
+    permanent: yes
+    state: enabled
+  become: yes
+  with_items:
+    - 10254/tcp # ingress controller (only) livenessProbe/readinessProbe
+    - 9099/tcp # canal/flannel livenessProbe/readinessProbe
+    - 8472/udp # canal/flannel VXLAN overlay networking
+    # - 4789/udp # canal/flannel VXLAN overlay networking (windows only)
+    # - 6783/tcp # networking using weave
+    # - 6783-6784/udp # networking using weave (UDP)
+  notify: restart firewalld
+
+# port forwarding requires masquerading so enable it
+- name: enable ip masquerading
+  firewalld:
+    masquerade: "yes"
+    permanent: yes
+    state: enabled
+  become: yes
+  notify: restart firewalld
+
+- name: flush to force firewalld and docker to restart if needed
+  meta: flush_handlers

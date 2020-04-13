@@ -1,0 +1,32 @@
+- name: add kubernetes repository
+  yum_repository:
+    name: Kubernetes
+    description: kubernetes repo
+    baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+    gpgkey:
+      - https://packages.cloud.google.com/yum/doc/yum-key.gpg
+      - https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+  gpgcheck: yes
+  repo_gpgcheck: yes
+  become: yes
+
+- name: install kubernetes binaries
+  yum:
+    name: kubectl
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: disable SELinux in currently running instance
+  shell: |
+    setenforce 0
+  register: disable_current_selinux
+  failed_when: disable_current_selinux.rc not in [0, 1]
+  changed_when: false
+  become: yes
+
+- name: put SELinux in permissive mode (effectively disabling it)
+  selinux:
+    policy: targeted
+    state: permissive
+  become: yes

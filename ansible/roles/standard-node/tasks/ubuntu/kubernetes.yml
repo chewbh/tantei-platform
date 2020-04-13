@@ -1,0 +1,18 @@
+- name: add google cloud gpg apt key
+  apt_key:
+    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    state: present
+  become: yes
+
+- name: add kubernetes repository
+  apt_repository:
+    repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
+    state: present
+  become: yes
+
+- name: update apt and install kubectl binary
+  apt:
+    name: kubectl
+    state: latest
+    update_cache: yes
+  become: yes
