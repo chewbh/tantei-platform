@@ -1,78 +1,65 @@
----
-# --------------------------------------------------------------------
-# - name: "Ansible | List all known variables and facts"
-#   debug:
-#     var: hostvars[inventory_hostname]
-#   when: inventory_hostname in groups["rancher"]
-- name: debug
-  debug:
-    msg: "{{ ansible_user_id }}"
+- name: update base OS to latest known packages
+  include_tasks: "{{ ansible_distribution | lower }}/os_update.yml"
+
+- name: install essential and useful os tools
+  package:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+    - unzip
+    - wget
+    - curl
+    - sshpass
+    - dnsutils
+    - vim
+    - zsh
+    - python3
+    - python3-pip
+    - python3-docker
+    - tmux
+    - htop
+    - tree
+    - jq
   become: yes
-  when: inventory_hostname in groups["rancher"]
-# --------------------------------------------------------------------
 
-# - name: update base OS to latest known packages
-#   include_tasks: "{{ ansible_distribution | lower }}/os_update.yml"
+- name: tune ulimit for a typical node
+  import_tasks: ulimit.yml
 
-# - name: install essential and useful os tools
-#   package:
-#     name: "{{ item }}"
-#     state: present
-#     update_cache: yes
-#   with_items:
-#     - unzip
-#     - wget
-#     - curl
-#     - sshpass
-#     - dnsutils
-#     - vim
-#     - zsh
-#     - python3
-#     - python3-pip
-#     - python3-docker
-#     - tmux
-#     - htop
-#     - tree
-#     - jq
-#   become: yes
+- name: ensure ntp is in place
+  import_tasks: ntp.yml
 
-# - name: tune ulimit for a typical node
-#   import_tasks: ulimit.yml
+- name: install docker
+  include_tasks: "{{ ansible_distribution | lower }}/docker.yml"
 
-# - name: ensure ntp is in place
-#   import_tasks: ntp.yml
+- name: "get docker-compose {{ docker_compose_version }}"
+  get_url:
+    url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-{{ ansible_system }}-{{ ansible_architecture }}"
+    dest: /usr/local/bin/docker-compose
+    mode: "0755"
+  become: yes
 
-# - name: install docker
-#   include_tasks: "{{ ansible_distribution | lower }}/docker.yml"
+- name: add user to docker group
+  user:
+    name: "{{ ansible_user_id }}"
+    groups: [docker]
+    append: yes
+  become: yes
 
-# - name: "get docker-compose {{ docker_compose_version }}"
-#   get_url:
-#     url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-{{ ansible_system }}-{{ ansible_architecture }}"
-#     dest: /usr/local/bin/docker-compose
-#     mode: "0755"
-#   become: yes
+- name: ensure no swap for kubernetes
+  import_tasks: k8s_no_swap.yml
 
-# - name: add user to docker group
-#   user:
-#     name: "{{ ansible_user_id }}"
-#     groups: [docker]
-#     append: yes
-#   become: yes
+- name: enable or load kernel modules needed by kubernetes
+  import_tasks: k8s_kernel_mod.yml
 
-# - name: ensure no swap for kubernetes
-#   import_tasks: k8s_no_swap.yml
+- name: setup and persist sysctl params required by kubernetes
+  import_tasks: k8s_sysctl.yml
 
-# - name: enable or load kernel modules needed by kubernetes
-#   import_tasks: k8s_kernel_mod.yml
+- name: open required network ports
+  import_tasks: k8s_firewalld.yml
 
-# - name: setup and persist sysctl params required by kubernetes
-#   import_tasks: k8s_sysctl.yml
+- name: install kubernetes binaries
+  include_tasks: "{{ ansible_distribution | lower }}/kubernetes.yml"
 
-# - name: open required network ports
-#   import_tasks: k8s_firewalld.yml
-
-# - name: install kubernetes binaries
-#   include_tasks: "{{ ansible_distribution | lower }}/kubernetes.yml"
-
-# - name: install or update helm
-#   import_tasks: helm.yml
+- name: install or update helm
+  import_tasks: helm.yml

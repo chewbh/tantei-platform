@@ -13,58 +13,193 @@
     mode: 0644
   when: inventory_hostname == groups['rancher'][0]
   register: rke_cluster_config
-# - name: generate SSH key for rke
-#   user:
-#     name: "{{ ansible_user_id }}"
-#     generate_ssh_key: yes
-#     ssh_key_type: rsa
-#     ssh_key_bits: 4096
-#     ssh_key_file: .ssh/id_rsa
-#     force: no
 
-# - name: fetch generated public SSH key for rke
-#   fetch:
-#     src: "/home/{{ ansible_user_id }}/.ssh/id_rsa.pub"
-#     dest: "/tmp/rke_ssh_tmp/{{ inventory_hostname }}.pub"
-#     flat: yes
-#   changed_when: no
+- name: generate SSH key for rke
+  user:
+    name: "{{ ansible_user_id }}"
+    generate_ssh_key: yes
+    ssh_key_type: rsa
+    ssh_key_bits: 4096
+    ssh_key_file: .ssh/id_rsa
+    force: no
 
-# - name: add generated public SSH key for rke
-#   authorized_key:
-#     user: "{{ ansible_user_id }}"
-#     state: present
-#     key: "{{ lookup('file', '/tmp/rke_ssh_tmp/{{ item }}.pub') }}"
-#   with_items:
-#     - "{{ groups['rancher'] }}"
+- name: fetch generated public SSH key for rke
+  fetch:
+    src: "/home/{{ ansible_user_id }}/.ssh/id_rsa.pub"
+    dest: "/tmp/rke_ssh_tmp/{{ inventory_hostname }}.pub"
+    flat: yes
+  changed_when: no
 
-# - name: remove fetched public SSH key for rke
-#   local_action:
-#     module: file
-#     path: /tmp/rke_ssh_tmp
-#     state: absent
-#   run_once: yes
-#   changed_when: no
+- name: add generated public SSH key for rke
+  authorized_key:
+    user: "{{ ansible_user_id }}"
+    state: present
+    key: "{{ lookup('file', '/tmp/rke_ssh_tmp/{{ item }}.pub') }}"
+  with_items:
+    - "{{ groups['rancher'] }}"
 
-# ---
-# rke up --config ./rancher-cluster.yml
-# # Finished building Kubernetes cluster successfully
+- name: remove fetched public SSH key for rke
+  local_action:
+    module: file
+    path: /tmp/rke_ssh_tmp
+    state: absent
+  run_once: yes
+  changed_when: no
 
-# kube_config_rancher-cluster.yml
+- name: setup k8s using rke
+  block:
+    - name: run rke up
+      shell: |
+        rke up --config /home/{{ ansible_user_id }}/rancher-cluster.yml
+      register: rke_output
+      changed_when: no
+      failed_when: no
+      no_log: yes
+    - name: "output of 'rke up --config /home/{{ ansible_user_id }}/rancher-cluster.yml'"
+      debug:
+        msg: "{{ rke_output.stdout_lines  }}"
+    - name: rke up failed
+      fail:
+        msg: "k8s setup failed based on output from rke command"
+      when: "rke_output.rc == 1 or 'Finished building Kubernetes cluster successfully' not in rke_output.stdout"
+  when: inventory_hostname == groups['rancher'][0] and
+    rke_cluster_config is changed or alway_run_rke_up
 
-# $HOME/.kube/config
+- name: "ensure .kube directory exists in {{ ansible_user_id }} home directory"
+  file:
+    state: directory
+    path: "/home/{{ ansible_user_id }}/.kube"
 
-# # test check
-# # kubectl get nodes
+- name: "copy generated kube_config to default config for {{ ansible_user_id }}"
+  copy:
+    remote_src: yes
+    src: "/home/{{ ansible_user_id }}/kube_config_rancher-cluster.yml"
+    dest: "/home/{{ ansible_user_id }}/.kube/config"
 
-# # wait for rke is done
+- name: query and wait for created k8s cluster nodes are all ready
+  shell: |
+    kubectl wait --for=condition=Ready nodes --all --timeout=30s
+  changed_when: no
+  retries: "{{ k8s_cluster_test_retry_count }}"
+  delay: "{{ k8s_cluster_test_retry_delay }}"
+  register: k8s_node_test_output
+  when: inventory_hostname == groups['rancher'][0]
 
-# helm repo add rancher-stable https://releases.rancher.com/server-charts/stable
-# kubectl create namespace cattle-system
+- name: test created k8s cluster by querying all pods are ready or completed
+  shell: |
+    kubectl get pods -A -o json |
+    jq '.items[].status.phase | select(. != "Running" and . != "Succeeded")'
+  changed_when: no
+  register: k8s_pod_test_output
+  until: k8s_pod_test_output.stdout | trim | length <= 0
+  retries: "{{ k8s_cluster_test_retry_count }}"
+  delay: "{{ k8s_cluster_test_retry_delay }}"
+  when: inventory_hostname == groups['rancher'][0]
 
-# helm install rancher rancher-stable/rancher \
-#   --namespace cattle-system \
-#   --set hostname=rancher.my.org
+- name: add rancher helm repo
+  shell: |
+    helm repo add rancher-stable {{ rancher_helm_repo }}
+  changed_when: no
+  register: add_rancher_helm_output
+  when: inventory_hostname == groups['rancher'][0]
 
-#   kubectl -n cattle-system rollout status deploy/rancher
-# Waiting for deployment "rancher" rollout to finish: 0 of 3 updated replicas are available...
-# deployment "rancher" successfully rolled out
+- name: create k8s namespace for rancher
+  shell: |
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: {{ rancher_namespace }}
+    EOF
+  changed_when: no
+  register: k8s_create_rancher_ns_output
+  when: inventory_hostname == groups['rancher'][0]
+
+- name: install cert-manager
+  block:
+    - name: create k8s namespace for cert-manager
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: {{ cert_manager_namespace }}
+        EOF
+      changed_when: no
+
+    - name: add jetstack helm repo for cert-manager
+      shell: |
+        helm repo add jetstack {{ cert_manager_helm_repo }} && \
+        helm repo update
+      changed_when: no
+
+    - name: install custom resource definitions for cert-manager
+      shell: |
+        kubectl apply -f {{ cert_manager_crd_url }}
+      changed_when: no
+
+    - name: check cert-manager is installed
+      shell: |
+        helm status cert-manager --namespace {{ cert_manager_namespace }}
+      changed_when: no
+      failed_when: no
+      register: certmanager_installed_check
+
+    - name: "{{ ('not found' in certmanager_installed_check.stderr) | ternary('install', 'upgrade') }} cert-manager helm chart"
+      shell: |
+        helm {{ ('not found' in certmanager_installed_check.stderr) | ternary('install', 'upgrade') }} \
+        cert-manager jetstack/cert-manager \
+        --namespace {{ cert_manager_namespace }} \
+        --version {{ cert_manager_version }}
+      changed_when: no
+      when: cert_manager_force_upgrade or
+        certmanager_installed_check.stderr is search('not found')
+      register: certmanager_install_output
+  when: inventory_hostname == groups['rancher'][0] and
+    rancher_tls_type == 'rancher' or rancher_tls_type == 'letsEncrypt'
+
+- name: query and wait for cert-manager pods to be running
+  shell: |
+    kubectl wait --for=condition=Ready pods --all --namespace cert-manager --timeout=30s
+  changed_when: no
+  retries: "{{ k8s_cluster_test_retry_count }}"
+  delay: "{{ k8s_cluster_test_retry_delay }}"
+  register: cert_manager_test_output
+  when: inventory_hostname == groups['rancher'][0] and
+    rancher_tls_type == 'rancher' or rancher_tls_type == 'letsEncrypt'
+
+- name: check rancher is installed
+  shell: |
+    helm status rancher --namespace {{ rancher_namespace }}
+  changed_when: no
+  failed_when: no
+  register: rancher_installed_check
+  when: inventory_hostname == groups['rancher'][0]
+
+- name: "{{ ('not found' in rancher_installed_check.stderr) | ternary('install', 'upgrade') }} rancher helm chart"
+  shell: |
+    helm {{ ('not found' in rancher_installed_check.stderr) | ternary('install', 'upgrade') }} \
+    rancher rancher-stable/rancher \
+      --namespace {{ rancher_namespace }} \
+      --set hostname={{ rancher_pubic_domain }} \
+      --set additionalTrustedCAs={{ rancher_additional_trust_ca }} \
+      --set auditLog.level={{ (rancher_auditlog_enabled) | ternary('1', '0') }} \
+      --set ingress.tls.source={{ rancher_tls_type }} {% if rancher_tls_type == 'letsEncrypt' %} \
+        --set letsEncrypt.email={{ rancher_letsencrypt_email }} {% endif %}
+  changed_when: no
+  when: inventory_hostname == groups['rancher'][0] and
+    (rancher_installed_check.stderr is search('not found') or rancher_force_upgrade)
+  register: rancher_install_output
+
+- name: output of rancher install
+  debug:
+    msg: "{{ rancher_install_output.stdout_lines  }}"
+  when: inventory_hostname == groups['rancher'][0] and
+    (rancher_installed_check.stderr is search('not found') or rancher_force_upgrade)
+
+- name: verify rancher installation is successful
+  shell: |
+    kubectl -n {{ rancher_namespace }} rollout status deploy/rancher
+  changed_when: no
+  register: verify_rancher_output
+  when: inventory_hostname == groups['rancher'][0]

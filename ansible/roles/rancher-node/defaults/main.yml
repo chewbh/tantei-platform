@@ -1,1 +1,23 @@
 rke_version: v0.2.10
+alway_run_rke_up: yes
+k8s_cluster_test_retry_count: 10
+k8s_cluster_test_retry_delay: 5
+
+rancher_helm_repo: https://releases.rancher.com/server-charts/stable
+rancher_force_upgrade: no
+rancher_namespace: cattle-system
+rancher_pubic_domain: rancher.tantei.io
+rancher_additional_trust_ca: "false"
+rancher_auditlog_enabled: no
+
+# possible value: letsEncrypt, rancher, secret
+# letsEncrypt - load balancer must have a public DNS record
+# and be accessible from the internet
+rancher_tls_type: rancher
+rancher_letsencrypt_email: ""
+
+cert_manager_helm_repo: https://charts.jetstack.io
+cert_manager_namespace: cert-manager
+cert_manager_version: v0.12.0
+cert_manager_crd_url: https://raw.githubusercontent.com/jetstack/cert-manager/release-0.12/deploy/manifests/00-crds.yaml
+cert_manager_force_upgrade: no
